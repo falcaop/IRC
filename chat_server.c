@@ -115,7 +115,19 @@ int main() {
                     // Envia a mensagem recebida para todos os clientes conectados
                     for (int j = 0; j < client_count; j++) {
                         int target_socket = client_sockets[j];
-                        send(target_socket, buffer, bytes_received, 0);
+
+                        // dps
+                        char nickname[10];
+                        sprintf(nickname,"%d", client_socket);
+                        
+                        char message[BUFFER_SIZE];
+                        strcpy(message, nickname);
+                        strcat(message, ": ");
+                        strcat(message, buffer);
+                        int size = bytes_received + 2 + strlen("nome");
+                        printf("%d - %s\n", size, message);
+                        
+                        send(target_socket, message, size, 0);
                     }
                 }
             }

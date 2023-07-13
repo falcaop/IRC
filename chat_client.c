@@ -86,7 +86,7 @@ int main() {
             }
 
             // Exibe a mensagem recebida do servidor
-            printf("Mensagem do servidor: %s\n", buffer);
+            printf("%s\n", buffer);
         }
     }
 
