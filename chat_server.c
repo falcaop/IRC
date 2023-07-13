@@ -7,12 +7,13 @@
 #include <sys/select.h>
 
 #define MAX_CLIENTS 10
-#define BUFFER_SIZE 1024
+#define HEADER_SIZE 52
+#define MESSAGE_SIZE 16
 
 int main() {
     int server_socket, client_sockets[MAX_CLIENTS], client_count = 0;
     struct sockaddr_in server_address, client_address;
-    char buffer[BUFFER_SIZE];
+    char buffer[HEADER_SIZE + MESSAGE_SIZE];
 
     // Cria o socket do servidor
     server_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -95,7 +96,7 @@ int main() {
                 memset(buffer, 0, sizeof(buffer));
 
                 // Recebe a mensagem do cliente
-                int bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
+                int bytes_received = recv(client_socket, buffer, MESSAGE_SIZE, 0);
                 if (bytes_received <= 0) {
                     // Erro ou conexão fechada pelo cliente
                     printf("Cliente desconectado. Socket: %d\n", client_socket);
@@ -109,7 +110,15 @@ int main() {
                     client_count--;
                 } else {
                     if (strcmp(buffer, "/ping") == 0){
-                        send(client_socket, "/pong", 6, 0);
+                        fd_set write_set;
+                        FD_ZERO(&write_set);
+                        FD_SET(client_socket, &write_set);
+                        int select_result = select(client_socket + 1, NULL, &write_set, NULL, NULL);
+                        if (select_result == -1) {
+                            perror("Erro ao enviar mensagem para o servidor");
+                            exit(EXIT_FAILURE);
+                        }
+                        send(client_socket, "pong", 6, 0);
                         continue;
                     }
                     // Envia a mensagem recebida para todos os clientes conectados
@@ -120,13 +129,20 @@ int main() {
                         char nickname[10];
                         sprintf(nickname,"%d", client_socket);
                         
-                        char message[BUFFER_SIZE];
+                        char message[HEADER_SIZE + MESSAGE_SIZE];
                         strcpy(message, nickname);
                         strcat(message, ": ");
                         strcat(message, buffer);
-                        int size = bytes_received + 2 + strlen("nome");
+                        int size = bytes_received + 2 + strlen(nickname);
                         printf("%d - %s\n", size, message);
-                        
+                        fd_set write_set;
+                        FD_ZERO(&write_set);
+                        FD_SET(target_socket, &write_set);
+                        int select_result = select(target_socket + 1, NULL, &write_set, NULL, NULL);
+                        if (select_result == -1) {
+                            perror("Erro ao enviar mensagem para o servidor");
+                            exit(EXIT_FAILURE);
+                        }
                         send(target_socket, message, size, 0);
                     }
                 }
