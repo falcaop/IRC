@@ -50,15 +50,14 @@ void close_socket(int socket){
     }
     client_count--;
     pthread_mutex_unlock(&client_mutex);
+    shutdown(socket, SHUT_RD);
     close(socket);
     pthread_exit(NULL);
 }
 
-struct client *find_client(char* nickname){
+struct client *find_client(char *nickname, struct channel *channel){
     for (int i = 0; i < client_count; i++){
-        if (strcmp(nickname, clients[i].nickname) == 0){
-            return &clients[i];
-        }
+        if ((clients[i].channel == channel) && (strcmp(nickname, clients[i].nickname) == 0)) return &clients[i];
     }
     return NULL;
 }
@@ -72,24 +71,27 @@ void handle_client(void *client) {
         int read_size = recv(current_client->socket, buffer, BUFFER_SIZE, 0);
         if (read_size <= 0) {
             close_socket(current_client->socket);
+            break;
         } 
-        else if (current_client->muted){
-            char *msg = "Você está silenciado";
-            send(current_client->socket, msg, strlen(msg) + 1, 0);
-        }
         // comandos para todos os usuarios
-        else if (strcmp(buffer, "/ping") == 0){
+        if (strcmp(buffer, "/ping") == 0){
             send(current_client->socket, "pong", 5, 0);
+            continue;
         }
-        else if (strncmp(buffer, "/nickname ", 10) == 0){
+        if (strncmp(buffer, "/nickname ", 10) == 0){
             strncpy(current_client->nickname, &buffer[10], strlen(buffer)-10);
             current_client->nickname[strlen(buffer)-10] = '\0'; //talvez tenha que limpar memoria
 
             char msg[100];
             sprintf(msg, "Apelido atualizado para: %s", current_client->nickname);
             send(current_client->socket, msg, strlen(msg) + 1, 0);
+            continue;
         }
-        else if (strncmp(buffer, "/join ", 6) == 0){
+        if(current_client->nickname[0] == '\0'){
+            send(current_client->socket, "Digite '/nickname (apelido)' para definir o seu apelido", 56, 0);
+            continue;
+        }
+        if (strncmp(buffer, "/join ", 6) == 0){
             char channelName[50];
             strncpy(channelName, &buffer[6], strlen(buffer)-6);
             channelName[strlen(buffer)-6] = '\0'; //talvez tenha que limpar memoria
@@ -112,93 +114,110 @@ void handle_client(void *client) {
             char msg[100];
             sprintf(msg, "Você se juntou ao canal: %s", channelName);
             send(current_client->socket, msg, strlen(msg) + 1, 0);
+            continue;
+        }
+        if(current_client->channel == NULL){
+            send(
+                current_client->socket,
+                "Digite '/join (canal)' para se juntar a um canal existinte ou criar um novo",
+                76,
+                0
+            );
+            continue;
         }
         // comandos para administradores
-        else if (strncmp(buffer, "/kick ", 6) == 0 && current_client->channel->admin == current_client){
-            char nickname[50];
-            strncpy(nickname, &buffer[6], strlen(buffer)-6);
-            nickname[strlen(buffer)-6] = '\0'; //talvez tenha que limpar memoria
+        if(current_client->channel->admin == current_client){
+            if (strncmp(buffer, "/kick ", 6) == 0){
+                char nickname[50];
+                strncpy(nickname, &buffer[6], strlen(buffer)-6);
+                nickname[strlen(buffer)-6] = '\0'; //talvez tenha que limpar memoria
 
-            struct client *client = find_client(nickname);
-            if (client){
-                char msg[100];
-                sprintf(msg, "O usuário %s foi expulso do canal", client->nickname);
-                send(current_client->socket, msg, strlen(msg) + 1, 0);
-                sprintf(msg, "Você foi expulso do canal");
-                send(client->socket, msg, strlen(msg) + 1, 0);
-                close_socket(client->socket);
+                struct client *client = find_client(nickname, current_client->channel);
+                if (client){
+                    char msg[100];
+                    sprintf(msg, "O usuário %s foi expulso do canal", client->nickname);
+                    send(current_client->socket, msg, strlen(msg) + 1, 0);
+                    sprintf(msg, "Você foi expulso do canal");
+                    send(client->socket, msg, strlen(msg) + 1, 0);
+                    close_socket(client->socket);
+                }
+                else{
+                    send(current_client->socket, "Usuário não encontrado", strlen("Usuário não encontrado") + 1, 0);
+                }
+                continue;
             }
-            else{
-                send(current_client->socket, "Usuário não encontrado", strlen("Usuário não encontrado") + 1, 0);
+            if (strncmp(buffer, "/mute ", 6) == 0){
+                char nickname[50];
+                strncpy(nickname, &buffer[6], strlen(buffer)-6);
+                nickname[strlen(buffer)-6] = '\0'; //talvez tenha que limpar memoria
+
+                struct client *client = find_client(nickname, current_client->channel);
+                if (client){
+                    client->muted = 1;
+                    char msg[100];
+                    sprintf(msg, "O usuário %s foi silenciado", client->nickname);
+                    send(current_client->socket, msg, strlen(msg) + 1, 0);
+                    sprintf(msg, "Você foi silenciado");
+                    send(client->socket, msg, strlen(msg) + 1, 0);
+                }
+                else{
+                    char *msg = "Usuário não encontrado";
+                    send(current_client->socket, msg, strlen(msg) + 1, 0);
+                }
+                continue;
+            }
+            if (strncmp(buffer, "/unmute ", 8) == 0){
+                char nickname[50];
+                strncpy(nickname, &buffer[8], strlen(buffer)-8);
+                nickname[strlen(buffer)-8] = '\0'; //talvez tenha que limpar memoria
+                
+                struct client *client = find_client(nickname, current_client->channel);
+                if (client){
+                    client->muted = 0;
+                    char msg[100];
+                    sprintf(msg, "O usuário %s não está mais silenciado", client->nickname);
+                    send(current_client->socket, msg, strlen(msg) + 1, 0);
+                    sprintf(msg, "Você não está mais silenciado");
+                    send(client->socket, msg, strlen(msg) + 1, 0);
+                }
+                else{
+                    char *msg = "Usuário não encontrado";
+                    send(current_client->socket, msg, strlen(msg) + 1, 0);
+                }
+                continue;
+            }
+            if (strncmp(buffer, "/whois ", 7) == 0){
+                char nickname[50];
+                strncpy(nickname, &buffer[7], strlen(buffer)-7);
+                nickname[strlen(buffer)-7] = '\0'; //talvez tenha que limpar memoria
+
+                struct client *client = find_client(nickname, current_client->channel);
+                if (client){
+                    char msg[100];
+                    sprintf(msg, "IP do usuário %s: %s", client->nickname, inet_ntoa(client->address.sin_addr));
+                    send(current_client->socket, msg, strlen(msg) + 1, 0);
+                }
+                else{
+                    char *msg = "Usuário não encontrado";
+                    send(current_client->socket, msg, strlen(msg) + 1, 0);
+                }
+                continue;
             }
         }
-        else if (strncmp(buffer, "/mute ", 6) == 0 && current_client->channel->admin == current_client){
-            char nickname[50];
-            strncpy(nickname, &buffer[6], strlen(buffer)-6);
-            nickname[strlen(buffer)-6] = '\0'; //talvez tenha que limpar memoria
-
-            struct client *client = find_client(nickname);
-            if (client){
-                client->muted = 1;
-                char msg[100];
-                sprintf(msg, "O usuário %s foi silenciado", client->nickname);
-                send(current_client->socket, msg, strlen(msg) + 1, 0);
-                sprintf(msg, "Você foi silenciado");
-                send(client->socket, msg, strlen(msg) + 1, 0);
-            }
-            else{
-                char *msg = "Usuário não encontrado";
-                send(current_client->socket, msg, strlen(msg) + 1, 0);
-            }
-        }
-        else if (strncmp(buffer, "/unmute ", 8) == 0 && current_client->channel->admin == current_client){
-            char nickname[50];
-            strncpy(nickname, &buffer[8], strlen(buffer)-8);
-            nickname[strlen(buffer)-8] = '\0'; //talvez tenha que limpar memoria
-            
-            struct client *client = find_client(nickname);
-            if (client){
-                client->muted = 0;
-                char msg[100];
-                sprintf(msg, "O usuário %s não está mais silenciado", client->nickname);
-                send(current_client->socket, msg, strlen(msg) + 1, 0);
-                sprintf(msg, "Você não está mais silenciado");
-                send(client->socket, msg, strlen(msg) + 1, 0);
-            }
-            else{
-                char *msg = "Usuário não encontrado";
-                send(current_client->socket, msg, strlen(msg) + 1, 0);
-            }
-        }
-        else if (strncmp(buffer, "/whois ", 7) == 0 && current_client->channel->admin == current_client){
-            char nickname[50];
-            strncpy(nickname, &buffer[7], strlen(buffer)-7);
-            nickname[strlen(buffer)-7] = '\0'; //talvez tenha que limpar memoria
-
-            struct client *client = find_client(nickname);
-            if (client){
-                char msg[100];
-                sprintf(msg, "IP do usuário %s: %s", client->nickname, inet_ntoa(client->address.sin_addr));
-                send(current_client->socket, msg, strlen(msg) + 1, 0);
-            }
-            else{
-                char *msg = "Usuário não encontrado";
-                send(current_client->socket, msg, strlen(msg) + 1, 0);
-            }
-            
+        if (current_client->muted){
+            char *msg = "Você está silenciado";
+            send(current_client->socket, msg, strlen(msg) + 1, 0);
             continue;
         }
         // mensagem normal
-        else{   
             // colocar apelido
-            char message[HEADER_SIZE + MESSAGE_SIZE];
-            strcpy(message, current_client->nickname);
-            strcat(message, ": ");
-            strcat(message, buffer);
+        char message[HEADER_SIZE + MESSAGE_SIZE];
+        strcpy(message, current_client->nickname);
+        strcat(message, ": ");
+        strcat(message, buffer);
 
-            // enviar
-            broadcast(message, current_client->channel);
-        }
+        // enviar
+        broadcast(message, current_client->channel);
     }
 }
 
@@ -261,8 +280,8 @@ int main() {
         // Adicionar cliente à lista
         pthread_mutex_lock(&client_mutex);
         clients[client_count].socket = client_socket;
-        strcpy(clients[client_count].nickname, "teste");
-        clients[client_count].channel = &channels[0];
+        clients[client_count].nickname[0] = '\0';
+        clients[client_count].channel = NULL;
         clients[client_count].address = client_address;
         client_count++;
         pthread_mutex_unlock(&client_mutex);
