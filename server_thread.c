@@ -11,6 +11,8 @@
 #define HEADER_SIZE 52
 #define MESSAGE_SIZE 64
 #define BUFFER_SIZE HEADER_SIZE+MESSAGE_SIZE
+#define MAX_RETRIES 5
+#define TIMEOUT_SECONDS 3
 
 struct client{
     int socket;
@@ -26,19 +28,15 @@ struct channel{
     struct client *admin;
 };
 
+struct socket_message{
+    int socket;
+    char *message;
+};
+
 int client_count, channel_count = 0;
 struct client clients[MAX_CLIENTS];
 struct channel channels[MAX_CHANNELS];
 pthread_mutex_t client_mutex;
-
-void broadcast(char *message, struct channel *channel) {
-    pthread_mutex_lock(&client_mutex);
-    for (int i = 0; i < client_count; i++) {
-        if (channel == clients[i].channel)
-            send(clients[i].socket, message, strlen(message) + 1, 0);
-    }
-    pthread_mutex_unlock(&client_mutex);
-}
 
 void close_socket(int socket){
     pthread_mutex_lock(&client_mutex);
@@ -53,6 +51,72 @@ void close_socket(int socket){
     shutdown(socket, SHUT_RD);
     close(socket);
     pthread_exit(NULL);
+}
+
+void send_with_confirmation(struct socket_message *socket_message) {
+    int socket = socket_message->socket;
+    char *message = socket_message->message;
+    int retries = 0;
+    int confirmation = 0;
+    ssize_t bytes_sent, bytes_received;
+    char buffer[5];
+
+    while ((retries++ < MAX_RETRIES) && !confirmation) {
+        // Send the message
+        bytes_sent = send(socket, message, strlen(message) + 1, 0);
+        if (bytes_sent == -1) {
+            perror("Failed to send message");
+            continue;
+        }
+
+        // Wait for confirmation with timeout
+        fd_set read_fds;
+        struct timeval timeout;
+        FD_ZERO(&read_fds);
+        FD_SET(socket, &read_fds);
+        timeout.tv_sec = TIMEOUT_SECONDS;
+        timeout.tv_usec = 0;
+
+        int select_result = select(socket + 1, &read_fds, NULL, NULL, &timeout);
+        if (select_result == -1) {
+            perror("Failed to wait for confirmation");
+            continue;
+        } else if (select_result == 0) {
+            printf("Timeout occurred while waiting for confirmation\n");
+            continue;
+        }
+
+        // Receive confirmation
+        memset(buffer, 0, sizeof(buffer));
+        bytes_received = recv(socket, buffer, sizeof(buffer), 0);
+        if (bytes_received == -1) {
+            perror("Failed to receive confirmation");
+            continue;
+        }
+
+        // Check if the received confirmation matches
+        if (strcmp(buffer, "/ack")) continue;
+        confirmation = 1;
+    }
+
+    if (confirmation) {
+        pthread_exit(NULL);
+    } else {
+        printf("Failed to receive confirmation after multiple retries.\n");
+        close_socket(socket);
+    }
+}
+
+void broadcast(char *message, struct channel *channel) {
+    pthread_mutex_lock(&client_mutex);
+    for (int i = 0; i < client_count; i++) {
+        if(channel == clients[i].channel){
+            pthread_t threadid;
+            struct socket_message socket_message = {clients[i].socket, message};
+            pthread_create(&threadid, NULL, (void *)send_with_confirmation, &socket_message);
+        }
+    }
+    pthread_mutex_unlock(&client_mutex);
 }
 
 struct client *find_client(char *nickname, struct channel *channel){
