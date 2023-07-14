@@ -9,7 +9,7 @@
 #define MAX_CLIENTS 10
 #define MAX_CHANNELS 10
 #define HEADER_SIZE 52
-#define MESSAGE_SIZE 32
+#define MESSAGE_SIZE 64
 #define BUFFER_SIZE HEADER_SIZE+MESSAGE_SIZE
 
 struct client{
@@ -35,7 +35,7 @@ void broadcast(char *message, struct channel *channel) {
     pthread_mutex_lock(&client_mutex);
     for (int i = 0; i < client_count; i++) {
         if (channel == clients[i].channel)
-            send(clients[i].socket, message, strlen(message), 0);
+            send(clients[i].socket, message, strlen(message) + 1, 0);
     }
     pthread_mutex_unlock(&client_mutex);
 }

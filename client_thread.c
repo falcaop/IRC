@@ -6,7 +6,9 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 
-#define BUFFER_SIZE 2048
+#define HEADER_SIZE 52
+#define MESSAGE_SIZE 64
+#define BUFFER_SIZE HEADER_SIZE+MESSAGE_SIZE
 
 int client_socket;
 pthread_t receive_thread;
@@ -18,7 +20,8 @@ void *receive_messages(void *arg) {
         int read_size = recv(client_socket, buffer, BUFFER_SIZE, 0);
         if (read_size <= 0) {
             printf("Desconectado do servidor.\n");
-            break;
+            close(client_socket);
+            exit(0);
         }
         printf("%s\n", buffer);
         fflush(stdout);
@@ -72,21 +75,30 @@ int main() {
         memset(buffer, 0, BUFFER_SIZE);
 
         // Ler mensagem do usuário
-        fgets(buffer, BUFFER_SIZE, stdin);
+        fgets(buffer, MESSAGE_SIZE, stdin);
         size_t newlineIndex = strcspn(buffer, "\n");
         buffer[newlineIndex] = '\0';
 
         // Verifica se o usuário deseja sair
-        if (feof(stdin) || strncmp(buffer, "/quit", 5) == 0) {
+        if (feof(stdin) || strcmp(buffer, "/quit") == 0) {
             printf("Desconectado\n");
             pthread_cancel(receive_thread);
             break;
         }
 
         // Enviar mensagem ao servidor
-        if (send(client_socket, buffer, strlen(buffer), 0) < 0) {
-            printf("Falha ao enviar mensagem.\n");
-            break;
+        while(1){
+            if (send(client_socket, buffer, strlen(buffer) + 1, 0) < 0) {
+                printf("Falha ao enviar mensagem.\n");
+                break;
+            }
+            sleep(0.5);
+            if(newlineIndex < (MESSAGE_SIZE - 1)) break;
+            memset(buffer, 0, BUFFER_SIZE);
+            fgets(buffer, MESSAGE_SIZE, stdin);
+            newlineIndex = strcspn(buffer, "\n");
+            if(!newlineIndex) break;
+            buffer[newlineIndex] = '\0';
         }
     }
 
