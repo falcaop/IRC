@@ -14,24 +14,10 @@
 int client_socket;
 pthread_t receive_thread;
 
-void *receive_messages(void *arg) {
-    char buffer[BUFFER_SIZE];
-    while (1) {
-        memset(buffer, 0, BUFFER_SIZE);
-        int read_size = recv(client_socket, buffer, BUFFER_SIZE, 0);
-        if (read_size <= 0) {
-            close(client_socket);
-            printf("Desconectado do servidor.\n");
-            fflush(stdout);
-            exit(0);
-        }
-        printf("%s\n", buffer);
-        fflush(stdout);
-    }
-    close(client_socket);
-    pthread_exit(NULL);
-}
+// função executada pela thread de recebimento de mensagens do servidor
+void *receive_messages(void *arg);
 
+// função principal
 int main() {
     signal(SIGINT, SIG_IGN);
 
@@ -40,19 +26,19 @@ int main() {
     int server_port = 12345;
     char buffer[BUFFER_SIZE];
 
-    // Criar socket do cliente
+    // criar socket do cliente
     client_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (client_socket == -1) {
-        printf("Falha ao criar o socket do cliente.\n");
+        printf("Erro ao criar o socket do cliente.\n");
         return 1;
     }
 
-    // Configurar endereço do servidor
+    // configurar endereço do servidor
     server_address.sin_family = AF_INET;
     server_address.sin_addr.s_addr = inet_addr(server_ip);
     server_address.sin_port = htons(server_port);
 
-    
+    // o usuário deve digitar /connect para estabelecer a conexão com servidor
     char *command;
     printf("Digite '/connect' para se conectar ao servidor ou '/exit' para sair.\n");
     while(1){
@@ -71,43 +57,43 @@ int main() {
         printf("Digite '/connect' para se conectar ao servidor ou '/exit' para sair.\n");
     }
 
-    // Conectar ao servidor
+    // conexão com o servidor
     if (connect(client_socket, (struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
-        printf("Falha ao conectar-se ao servidor.\n");
+        printf("Erro ao conectar-se ao servidor.\n");
         return 1;
     }
-
     printf(
         "Conectado ao servidor IRC. Digite '/nickname (apelido)' para definir o seu apelido, '/join (canal)' para se"
         " juntar a um canal ou criar um novo, ou '/quit' para encerrar.\n"
     );
 
-    // Iniciar a thread de recebimento de mensagens
+    // iniciar a thread de recebimento de mensagens
     if (pthread_create(&receive_thread, NULL, receive_messages, NULL) != 0) {
-        printf("Falha ao criar a thread de recebimento de mensagens.\n");
+        printf("Erro ao criar a thread de recebimento de mensagens.\n");
         return 1;
     }
 
+    // leitura de mensagens do usuário
     while (1) {
-        // Limpar o buffer
+        // limpar o buffer e ler mensagem
         memset(buffer, 0, BUFFER_SIZE);
-
-        // Ler mensagem do usuário
         fgets(buffer, MESSAGE_SIZE, stdin);
         size_t newlineIndex = strcspn(buffer, "\n");
         buffer[newlineIndex] = '\0';
 
-        // Verifica se o usuário deseja sair
+        // verificar se usuário deseja se desconectar
         if (feof(stdin) || strcmp(buffer, "/quit") == 0) {
             printf("Desconectado\n");
             pthread_cancel(receive_thread);
             break;
         }
 
-        // Enviar mensagem ao servidor
+        // enviar mensagem ao servidor
+        // se o tamanho da mensagem for maior que o tamanho permitido, ela é dividida e
+        // cada parte é enviada indiviudalmente ao servidor
         while(1){
             if (send(client_socket, buffer, strlen(buffer) + 1, 0) < 0) {
-                printf("Falha ao enviar mensagem.\n");
+                printf("Erro ao enviar mensagem.\n");
                 break;
             }
             sleep(1);
@@ -120,11 +106,34 @@ int main() {
         }
     }
 
-    // Aguardar a finalização da thread de recebimento de mensagens
-    pthread_join(receive_thread, NULL);
+    // aguardar a finalização da thread de recebimento de mensagens
+    //pthread_join(receive_thread, NULL); // OBS: acho que n precisa disso, qnd e com kick ele fecha direto e quando e por /quit ele cancela athread antes
 
-    // Fechar socket
+    // fechar socket
     close(client_socket);
 
     return 0;
+}
+
+void *receive_messages(void *arg) {
+    char buffer[BUFFER_SIZE];
+    while (1) {
+        // recebimento da mensagem
+        memset(buffer, 0, BUFFER_SIZE);
+        int read_size = recv(client_socket, buffer, BUFFER_SIZE, 0);
+        if (read_size <= 0){
+            break;
+        }
+
+        // exibição da mensagem na tela
+        printf("%s\n", buffer);
+        fflush(stdout);
+    }
+
+    close(client_socket);
+    printf("Desconectado do servidor.\n");
+    fflush(stdout);
+    exit(0);
+    //OBS:acho que isso e inutil? ele sempre dava exit(0) antes nem dava pra sair do while
+    //pthread_exit(NULL); 
 }
