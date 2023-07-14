@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include <signal.h>
 
 #define MAX_CLIENTS 10
 #define MAX_CHANNELS 10
@@ -37,6 +38,12 @@ int client_count, channel_count = 0;
 struct client clients[MAX_CLIENTS];
 struct channel channels[MAX_CHANNELS];
 pthread_mutex_t client_mutex;
+
+void exit_server(){
+    printf("\nEncerrando o servidor...\n");
+    pthread_mutex_destroy(&client_mutex);
+    exit(0);
+}
 
 void close_socket(int socket){
     pthread_mutex_lock(&client_mutex);
@@ -206,11 +213,12 @@ void handle_client(void *client) {
                     close_socket(client->socket);
                 }
                 else{
-                    send(current_client->socket, "Usuário não encontrado", strlen("Usuário não encontrado") + 1, 0);
+                    char *msg = "Usuário não encontrado";
+                    send(current_client->socket, msg, strlen(msg) + 1, 0);
                 }
                 continue;
             }
-            if (strncmp(buffer, "/mute ", 6) == 0){
+            if (strncmp(buffer, "/mute ", 6) == 0 && current_client->channel->admin == current_client){
                 char nickname[50];
                 strncpy(nickname, &buffer[6], strlen(buffer)-6);
                 nickname[strlen(buffer)-6] = '\0'; //talvez tenha que limpar memoria
@@ -274,7 +282,7 @@ void handle_client(void *client) {
             continue;
         }
         // mensagem normal
-            // colocar apelido
+        // colocar apelido
         char message[HEADER_SIZE + MESSAGE_SIZE];
         strcpy(message, current_client->nickname);
         strcat(message, ": ");
@@ -286,6 +294,8 @@ void handle_client(void *client) {
 }
 
 int main() {
+    signal(SIGINT, exit_server);
+
     strcpy(channels[0].name, "canal1");
     channel_count = 1;
 
@@ -357,11 +367,8 @@ int main() {
             client_socket,
             inet_ntoa(client_address.sin_addr),
             ntohs(client_address.sin_port));
+            
     }
-
-    // Fechar sockets e liberar recursos
-    close(server_socket);
-    pthread_mutex_destroy(&client_mutex);
 
     return 0;
 }

@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include <signal.h>
 
 #define HEADER_SIZE 52
 #define MESSAGE_SIZE 64
@@ -19,17 +20,21 @@ void *receive_messages(void *arg) {
         memset(buffer, 0, BUFFER_SIZE);
         int read_size = recv(client_socket, buffer, BUFFER_SIZE, 0);
         if (read_size <= 0) {
-            printf("Desconectado do servidor.\n");
             close(client_socket);
+            printf("Desconectado do servidor.\n");
+            fflush(stdout);
             exit(0);
         }
         printf("%s\n", buffer);
         fflush(stdout);
     }
+    close(client_socket);
     pthread_exit(NULL);
 }
 
 int main() {
+    signal(SIGINT, SIG_IGN);
+
     struct sockaddr_in server_address;
     char server_ip[] = "127.0.0.1";
     int server_port = 12345;
@@ -47,13 +52,23 @@ int main() {
     server_address.sin_addr.s_addr = inet_addr(server_ip);
     server_address.sin_port = htons(server_port);
 
+    
     char *command;
+    printf("Digite '/connect' para se conectar ao servidor ou '/exit' para sair.\n");
     while(1){
         printf("> ");
         scanf("%ms", &command);
         getchar();
-        if(!strcmp(command, "/connect")) break;
-        printf("Digite '/connect' para se conectar ao servidor.\n");
+        if(!strcmp(command, "/connect")){
+            free(command);
+            break;
+        }      
+        else if (!strcmp(command, "/exit")){
+            free(command);
+            exit(0);
+        }
+        free(command);
+        printf("Digite '/connect' para se conectar ao servidor ou '/exit' para sair.\n");
     }
 
     // Conectar ao servidor
