@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include <signal.h>
 
 #define MAX_CLIENTS 10
 #define MAX_CHANNELS 10
@@ -31,6 +32,12 @@ struct client clients[MAX_CLIENTS];
 struct channel channels[MAX_CHANNELS];
 pthread_mutex_t client_mutex;
 
+void exit_server(){
+    printf("\nEncerrando o servidor...\n");
+    pthread_mutex_destroy(&client_mutex);
+    exit(0);
+}
+
 void broadcast(char *message, struct channel *channel) {
     pthread_mutex_lock(&client_mutex);
     for (int i = 0; i < client_count; i++) {
@@ -51,6 +58,8 @@ void close_socket(int socket){
     client_count--;
     pthread_mutex_unlock(&client_mutex);
     close(socket);
+    close(clients[client_count].socket);
+    pthread_cancel(clients[client_count].thread);
     pthread_exit(NULL);
 }
 
@@ -71,6 +80,7 @@ void handle_client(void *client) {
         memset(buffer, 0, BUFFER_SIZE);
         int read_size = recv(current_client->socket, buffer, BUFFER_SIZE, 0);
         if (read_size <= 0) {
+            printf("hora de fechar\n");
             close_socket(current_client->socket);
         } 
         else if (current_client->muted){
@@ -126,10 +136,12 @@ void handle_client(void *client) {
                 send(current_client->socket, msg, strlen(msg) + 1, 0);
                 sprintf(msg, "Você foi expulso do canal");
                 send(client->socket, msg, strlen(msg) + 1, 0);
+                printf("vou fechar ele : %d\n", client->socket);
                 close_socket(client->socket);
             }
             else{
-                send(current_client->socket, "Usuário não encontrado", strlen("Usuário não encontrado") + 1, 0);
+                char *msg = "Usuário não encontrado";
+                send(current_client->socket, msg, strlen(msg) + 1, 0);
             }
         }
         else if (strncmp(buffer, "/mute ", 6) == 0 && current_client->channel->admin == current_client){
@@ -203,6 +215,8 @@ void handle_client(void *client) {
 }
 
 int main() {
+    signal(SIGINT, exit_server);
+
     strcpy(channels[0].name, "canal1");
     channel_count = 1;
 
@@ -274,11 +288,8 @@ int main() {
             client_socket,
             inet_ntoa(client_address.sin_addr),
             ntohs(client_address.sin_port));
+            
     }
-
-    // Fechar sockets e liberar recursos
-    close(server_socket);
-    pthread_mutex_destroy(&client_mutex);
 
     return 0;
 }
