@@ -92,7 +92,7 @@ int main() {
                 printf("Falha ao enviar mensagem.\n");
                 break;
             }
-            sleep(0.5);
+            sleep(1);
             if(newlineIndex < (MESSAGE_SIZE - 1)) break;
             memset(buffer, 0, BUFFER_SIZE);
             fgets(buffer, MESSAGE_SIZE, stdin);
