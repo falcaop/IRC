@@ -77,7 +77,6 @@ void handle_client(void *client) {
         memset(buffer, 0, BUFFER_SIZE);
         int read_size = recv(current_client->socket, buffer, BUFFER_SIZE, 0);
         if (read_size <= 0) {
-            printf("hora de fechar\n");
             close_socket(current_client->socket);
             break;
         } 
@@ -140,25 +139,25 @@ void handle_client(void *client) {
                 strncpy(nickname, &buffer[6], strlen(buffer)-6);
                 nickname[strlen(buffer)-6] = '\0'; //talvez tenha que limpar memoria
 
-            struct client *client = find_client(nickname);
-            if (client){
-                char msg[100];
-                sprintf(msg, "O usuário %s foi expulso do canal", client->nickname);
-                send(current_client->socket, msg, strlen(msg) + 1, 0);
-                sprintf(msg, "Você foi expulso do canal");
-                send(client->socket, msg, strlen(msg) + 1, 0);
-                close_socket(client->socket);
+                struct client *client = find_client(nickname, current_client->channel);
+                if (client){
+                    char msg[100];
+                    sprintf(msg, "O usuário %s foi expulso do canal", client->nickname);
+                    send(current_client->socket, msg, strlen(msg) + 1, 0);
+                    sprintf(msg, "Você foi expulso do canal");
+                    send(client->socket, msg, strlen(msg) + 1, 0);
+                    close_socket(client->socket);
+                }
+                else{
+                    char *msg = "Usuário não encontrado";
+                    send(current_client->socket, msg, strlen(msg) + 1, 0);
+                }
+                continue;
             }
-            else{
-                char *msg = "Usuário não encontrado";
-                send(current_client->socket, msg, strlen(msg) + 1, 0);
-            }
-            continue;
-        }
-        if (strncmp(buffer, "/mute ", 6) == 0 && current_client->channel->admin == current_client){
-            char nickname[50];
-            strncpy(nickname, &buffer[6], strlen(buffer)-6);
-            nickname[strlen(buffer)-6] = '\0'; //talvez tenha que limpar memoria
+            if (strncmp(buffer, "/mute ", 6) == 0 && current_client->channel->admin == current_client){
+                char nickname[50];
+                strncpy(nickname, &buffer[6], strlen(buffer)-6);
+                nickname[strlen(buffer)-6] = '\0'; //talvez tenha que limpar memoria
 
                 struct client *client = find_client(nickname, current_client->channel);
                 if (client){
@@ -219,7 +218,7 @@ void handle_client(void *client) {
             continue;
         }
         // mensagem normal
-            // colocar apelido
+        // colocar apelido
         char message[HEADER_SIZE + MESSAGE_SIZE];
         strcpy(message, current_client->nickname);
         strcat(message, ": ");
