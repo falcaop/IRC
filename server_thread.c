@@ -10,10 +10,8 @@
 #define MAX_CLIENTS 10
 #define MAX_CHANNELS 10
 #define HEADER_SIZE 52
-#define MESSAGE_SIZE 64
+#define MESSAGE_SIZE 4096
 #define BUFFER_SIZE HEADER_SIZE+MESSAGE_SIZE
-#define MAX_RETRIES 5
-#define TIMEOUT_SECONDS 3
 
 struct client{
     int socket;
@@ -25,13 +23,8 @@ struct client{
 };
 
 struct channel{
-    char name[50];
+    char name[201];
     struct client *admin;
-};
-
-struct socket_message{
-    int socket;
-    char *message;
 };
 
 int client_count, channel_count = 0;
@@ -46,84 +39,34 @@ void exit_server(){
 }
 
 void close_socket(int socket){
+    pthread_t thread;
     pthread_mutex_lock(&client_mutex);
     for (int i = 0; i < client_count; i++) {
         if (clients[i].socket == socket) {
+            thread = clients[i].thread;
             clients[i] = clients[client_count - 1];
             break;
         }
     }
     client_count--;
     pthread_mutex_unlock(&client_mutex);
-    shutdown(socket, SHUT_RD);
     close(socket);
-    pthread_exit(NULL);
-}
-
-void send_with_confirmation(struct socket_message *socket_message) {
-    int socket = socket_message->socket;
-    char *message = socket_message->message;
-    int retries = 0;
-    int confirmation = 0;
-    ssize_t bytes_sent, bytes_received;
-    char buffer[5];
-
-    while ((retries++ < MAX_RETRIES) && !confirmation) {
-        // Send the message
-        bytes_sent = send(socket, message, strlen(message) + 1, 0);
-        if (bytes_sent == -1) {
-            perror("Failed to send message");
-            continue;
-        }
-
-        // Wait for confirmation with timeout
-        fd_set read_fds;
-        struct timeval timeout;
-        FD_ZERO(&read_fds);
-        FD_SET(socket, &read_fds);
-        timeout.tv_sec = TIMEOUT_SECONDS;
-        timeout.tv_usec = 0;
-
-        int select_result = select(socket + 1, &read_fds, NULL, NULL, &timeout);
-        if (select_result == -1) {
-            perror("Failed to wait for confirmation");
-            continue;
-        } else if (select_result == 0) {
-            printf("Timeout occurred while waiting for confirmation\n");
-            continue;
-        }
-
-        // Receive confirmation
-        memset(buffer, 0, sizeof(buffer));
-        bytes_received = recv(socket, buffer, sizeof(buffer), 0);
-        if (bytes_received == -1) {
-            perror("Failed to receive confirmation");
-            continue;
-        }
-
-        // Check if the received confirmation matches
-        if (strcmp(buffer, "/ack")) continue;
-        confirmation = 1;
-    }
-
-    if (confirmation) {
-        pthread_exit(NULL);
-    } else {
-        printf("Failed to receive confirmation after multiple retries.\n");
-        close_socket(socket);
-    }
+    pthread_cancel(thread);
 }
 
 void broadcast(char *message, struct channel *channel) {
+    int pending_close[MAX_CLIENTS];
+    int pending_close_index = 0;
     pthread_mutex_lock(&client_mutex);
     for (int i = 0; i < client_count; i++) {
         if(channel == clients[i].channel){
-            pthread_t threadid;
-            struct socket_message socket_message = {clients[i].socket, message};
-            pthread_create(&threadid, NULL, (void *)send_with_confirmation, &socket_message);
+            int retries = 0;
+            while((retries++ < 5) && (send(clients[i].socket, message, strlen(message) + 1, 0) < 1));
+            if(retries == 6) pending_close[pending_close_index++] = clients[i].socket;
         }
     }
     pthread_mutex_unlock(&client_mutex);
+    for(int i = 0; i < pending_close_index; i++) close_socket(pending_close[pending_close_index]);
 }
 
 struct client *find_client(char *nickname, struct channel *channel){
@@ -163,9 +106,13 @@ void handle_client(void *client) {
             continue;
         }
         if (strncmp(buffer, "/join ", 6) == 0){
-            char channelName[50];
-            strncpy(channelName, &buffer[6], strlen(buffer)-6);
-            channelName[strlen(buffer)-6] = '\0'; //talvez tenha que limpar memoria
+            if((strlen(buffer) - 6) > 200){
+                send(current_client->socket, "Nomes de canais não podem ser maiores que 200 caracteres", 57, 0);
+                continue;
+            }
+
+            char channelName[201];
+            strcpy(channelName, &buffer[6]);
 
             int exists = 0;
             for (int i = 0; i < channel_count; i++){
@@ -176,6 +123,22 @@ void handle_client(void *client) {
                 }
             }
             if (!exists){
+                if((channelName[0] != '&') && (channelName[0] != '#')){
+                    send(current_client->socket, "Nomes de canais devem começar com '&' ou '#'", 45, 0);
+                    continue;
+                }
+                if(strchr(channelName, ' ')){
+                    send(current_client->socket, "Nomes de canais não podem conter espaços", 41, 0);
+                    continue;
+                }
+                if(strchr(channelName, 7)){
+                    send(current_client->socket, "Nomes de canais não podem conter control G", 43, 0);
+                    continue;
+                }
+                if(strchr(channelName, ',')){
+                    send(current_client->socket, "Nomes de canais não podem conter virgulas", 42, 0);
+                    continue;
+                }
                 strcpy(channels[channel_count].name, channelName);
                 channels[channel_count].admin = current_client;
                 current_client->channel = &channels[channel_count];

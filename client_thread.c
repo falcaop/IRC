@@ -8,7 +8,7 @@
 #include <signal.h>
 
 #define HEADER_SIZE 52
-#define MESSAGE_SIZE 64
+#define MESSAGE_SIZE 4096
 #define BUFFER_SIZE HEADER_SIZE+MESSAGE_SIZE
 
 int client_socket;
@@ -77,7 +77,10 @@ int main() {
         return 1;
     }
 
-    printf("Conectado ao servidor IRC. Digite '/quit' para encerrar.\n");
+    printf(
+        "Conectado ao servidor IRC. Digite '/nickname (apelido)' para definir o seu apelido, '/join (canal)' para se"
+        " juntar a um canal ou criar um novo, ou '/quit' para encerrar.\n"
+    );
 
     // Iniciar a thread de recebimento de mensagens
     if (pthread_create(&receive_thread, NULL, receive_messages, NULL) != 0) {
