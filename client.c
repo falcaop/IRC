@@ -106,9 +106,6 @@ int main() {
         }
     }
 
-    // aguardar a finalização da thread de recebimento de mensagens
-    //pthread_join(receive_thread, NULL); // OBS: acho que n precisa disso, qnd e com kick ele fecha direto e quando e por /quit ele cancela athread antes
-
     // fechar socket
     close(client_socket);
 
@@ -134,6 +131,4 @@ void *receive_messages(void *arg) {
     printf("Desconectado do servidor.\n");
     fflush(stdout);
     exit(0);
-    //OBS:acho que isso e inutil? ele sempre dava exit(0) antes nem dava pra sair do while
-    //pthread_exit(NULL); 
 }

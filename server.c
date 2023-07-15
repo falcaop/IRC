@@ -12,7 +12,6 @@
 #define HEADER_SIZE 52
 #define MESSAGE_SIZE 4096
 #define BUFFER_SIZE HEADER_SIZE+MESSAGE_SIZE
-// OBS: NAO E MELHOR FINGIR QUE O TAMANHO TOTAL É DE 4096 E NAO 4148 ? e a mensagem enviada fica com -52 mesmo..
 
 // definição da estrutura de um cliente
 struct client{
@@ -43,10 +42,13 @@ void exit_server();
 // fecha o seu socket, finaliza sua thread, remove da lista de clientes conectados
 void close_socket(int socket);
 
-// envia a mensagem em broadcast para todos os clientes conectados no canal. OBS: o nome disso nao e multicast nao sera kkkk
+// envia a mensagem em broadcast para todos os clientes conectados no canal.
 void broadcast(char *message, struct channel *channel);
 
 // retorna o endereço do cliente com um determinado nickname em um determinado canal, ou NULL, se não existir
+struct client *find_client(char *nickname, struct channel *channel);
+
+// função executada pela thread que recebe mensagens de um cliente e envia para todos os clientes no canal
 void handle_client(void *client);
 
 // função principal
@@ -169,14 +171,18 @@ void broadcast(char *message, struct channel *channel) {
 }
 
 struct client *find_client(char *nickname, struct channel *channel){
-    // OBS: SERA QUE PRECISA DE MUTEX AQUI ?
+    struct client *client = NULL;
+    pthread_mutex_lock(&client_mutex);
     for (int i = 0; i < client_count; i++){
-        if ((clients[i].channel == channel) && (strcmp(nickname, clients[i].nickname) == 0)) return &clients[i];
+        if ((clients[i].channel == channel) && (strcmp(nickname, clients[i].nickname) == 0)){
+            client = &clients[i];
+            break;
+        }
     }
-    return NULL;
+    pthread_mutex_unlock(&client_mutex);
+    return client;
 }
 
-// função executada pela thread que recebe mensagens de um cliente e envia para todos os clientes no canal
 void handle_client(void *client) {
     struct client *current_client = (struct client *)client; 
     char buffer[BUFFER_SIZE];
@@ -186,12 +192,6 @@ void handle_client(void *client) {
         memset(buffer, 0, BUFFER_SIZE);
         int read_size = recv(current_client->socket, buffer, BUFFER_SIZE, 0);
         if (read_size <= 0) {
-            // OBS: talvez não precise, mas se quiser. acho que é so tirar isso e talvez tirar a verificacao de admin tbm nas funcoes la kick etc
-            // pq client->channel nunca vai ser nulo e client->channel->admin nunca via ser = current_clietn se ele nao existir mais, entao so n vai ter adm
-            // e no momento eu so fiz nao ter adm so mudei pra null pra nada sinceramente.
-            if (current_client->channel && current_client->channel->admin == current_client)
-                current_client->channel->admin = NULL;
-
             close_socket(current_client->socket);
             break;
         } 
@@ -290,7 +290,7 @@ void handle_client(void *client) {
                     send(current_client->socket, msg, strlen(msg) + 1, 0);
                     continue;
                 }
-                if (client == current_client->channel->admin){
+                if (client == current_client){
                     char *msg = "Não é possível usar a operação em administradores";
                     send(current_client->socket, msg, strlen(msg) + 1, 0);
                     continue;
@@ -319,7 +319,7 @@ void handle_client(void *client) {
                     send(current_client->socket, msg, strlen(msg) + 1, 0);
                     continue;
                 }
-                if (client == current_client->channel->admin){
+                if (client == current_client){
                     char *msg = "Não é possível usar a operação em administradores";
                     send(current_client->socket, msg, strlen(msg) + 1, 0);
                     continue;
@@ -348,7 +348,7 @@ void handle_client(void *client) {
                     send(current_client->socket, msg, strlen(msg) + 1, 0);
                     continue;
                 }
-                if (client == current_client->channel->admin){
+                if (client == current_client){
                     char *msg = "Não é possível usar a operação em administradores";
                     send(current_client->socket, msg, strlen(msg) + 1, 0);
                     continue;
@@ -374,11 +374,6 @@ void handle_client(void *client) {
                 struct client *client = find_client(nickname, current_client->channel);
                 if (!client){
                     char *msg = "Usuário não encontrado";
-                    send(current_client->socket, msg, strlen(msg) + 1, 0);
-                    continue;
-                }
-                if (client == current_client->channel->admin){
-                    char *msg = "Não é possível usar a operação em administradores";
                     send(current_client->socket, msg, strlen(msg) + 1, 0);
                     continue;
                 }
