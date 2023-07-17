@@ -32,12 +32,12 @@ struct channel{
 struct client_message{
     int socket;
     char *message;
-}
+};
 
 struct sent_message{
     pthread_t thread;
     char *message;
-}
+};
 
 int server_socket;
 int client_count, channel_count = 0;
