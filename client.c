@@ -113,17 +113,22 @@ int main() {
 }
 
 void *receive_messages(void *arg) {
-    char buffer[BUFFER_SIZE];
+    int buffer_size = sizeof(pthread_t) + BUFFER_SIZE;
+    char buffer[buffer_size];
     while (1) {
         // recebimento da mensagem
-        memset(buffer, 0, BUFFER_SIZE);
-        int read_size = recv(client_socket, buffer, BUFFER_SIZE, 0);
+        memset(buffer, 0, buffer_size);
+        int read_size = recv(client_socket, buffer, buffer_size, 0);
         if (read_size <= 0){
             break;
         }
-
+        int sent_buffer_size = 5 + sizeof(pthread_t);
+        char sent_buffer[sent_buffer_size];
+        strcpy(sent_buffer, "/ack ");
+        *(&sent_buffer[5]) = (pthread_t)(*buffer);
+        send(client_socket, sent_buffer, sent_buffer_size, 0);
         // exibição da mensagem na tela
-        printf("%s\n", buffer);
+        printf("%s\n", &buffer[sizeof(pthread_t)]);
         fflush(stdout);
     }
 

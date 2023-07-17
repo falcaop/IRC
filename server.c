@@ -29,6 +29,16 @@ struct channel{
     struct client *admin;
 };
 
+struct client_message{
+    int socket;
+    char *message;
+}
+
+struct sent_message{
+    pthread_t thread;
+    char *message;
+}
+
 int server_socket;
 int client_count, channel_count = 0;
 struct client clients[MAX_CLIENTS];
@@ -153,6 +163,23 @@ void close_socket(int socket){
     pthread_cancel(thread);
 }
 
+void send_message(char *client_message){
+    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+    int socket = client_message->socket;
+    char *message = client_message->message;
+    int sent_message_size = sizeof(pthread_t) + strlen(message) + 1;
+    char sent_message[sent_message_size];
+    *sent_message = pthread_self();
+    strcpy(&sent_message[sizeof(pthread_t)], message);
+    for(int retries = 0; retries < 5; retries++){
+        send(socket, sent_message, sent_message_size, 0);
+        sleep(3);
+    }
+    close_socket(socket);
+    printf("Conexão perdida com o socket %d\n", socket);
+    pthread_exit(NULL);
+}
+
 void broadcast(char *message, struct channel *channel) {
     int pending_close[MAX_CLIENTS];
     int pending_close_index = 0;
@@ -160,9 +187,8 @@ void broadcast(char *message, struct channel *channel) {
     for (int i = 0; i < client_count; i++) {
         if(channel == clients[i].channel){
             int retries = 0;
-            // caso não seja enviado, tenta reenviar até 5 vezes
-            while((retries++ < 5) && (send(clients[i].socket, message, strlen(message) + 1, 0) < 1));
-            if(retries == 6) pending_close[pending_close_index++] = clients[i].socket;
+            struct client_message client_message = {clients[i].socket, message};
+            pthread_create(NULL, NULL, send_message, &client_message);
         }
     }
     pthread_mutex_unlock(&client_mutex);
@@ -195,6 +221,10 @@ void handle_client(void *client) {
             close_socket(current_client->socket);
             break;
         } 
+        if(!strncmp(buffer, "/ack ", 5)){
+            pthread_cancel((pthread_t)buffer[5]);
+            continue;
+        }
         // comandos para todos os clientes
         // /ping, retornar pong para o cliente
         if (strcmp(buffer, "/ping") == 0){
@@ -394,7 +424,7 @@ void handle_client(void *client) {
         }
 
         // mensagem comum: adicionar apelido do cliente no inicio e enviar para todos do canal
-        char message[HEADER_SIZE + MESSAGE_SIZE];
+        char message[BUFFER_SIZE];
         strcpy(message, current_client->nickname);
         strcat(message, ": ");
         strcat(message, buffer);
