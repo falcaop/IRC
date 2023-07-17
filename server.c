@@ -158,7 +158,7 @@ void close_socket(int socket){
     pthread_cancel(thread);
 }
 
-void send_message(char *client_message){
+void send_message(struct client_message *client_message){
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
     int socket = client_message->socket;
     char *message = client_message->message;
