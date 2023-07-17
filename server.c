@@ -34,11 +34,6 @@ struct client_message{
     char *message;
 };
 
-struct sent_message{
-    pthread_t thread;
-    char *message;
-};
-
 int server_socket;
 int client_count, channel_count = 0;
 struct client clients[MAX_CLIENTS];
